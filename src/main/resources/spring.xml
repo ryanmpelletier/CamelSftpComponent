@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+    http://camel.apache.org/schema/spring 
+    http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+
+
+	<camelContext id="camelContext" xmlns="http://camel.apache.org/schema/spring">
+		<onException>
+			<exception>java.lang.Throwable</exception>
+			<handled>
+				<simple>true</simple>
+			</handled>
+			<log loggingLevel="ERROR" message="${exception.message}" />
+			<process ref="errorProcessor" />
+		</onException>
+
+		<route>
+			<from uri="sftp:sshServer" />
+			<convertBodyTo type="java.lang.String" />
+			<to uri="file://out" /> 			
+		</route>
+		
+	</camelContext>
+	
+	
+	<!-- SshServer configuration--> 	
+	<bean id="sshServer" class="org.apache.sshd.SshServer" factory-method="setUpDefaultServer">
+		<property name="port" value="22"/>
+		<property name="commandFactory" ref="commandFactory"/>
+		<property name="keyPairProvider" ref="keyPairProvider"/>
+		<property name="passwordAuthenticator" ref="passwordAuthenticator"/>
+	</bean>
+	
+	
+	<bean id="commandFactory" class="org.apache.sshd.server.command.ScpCommandFactory"/>
+	<bean id="keyPairProvider" class="org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider">
+		<constructor-arg value="hostkey.ser"/>
+	</bean>
+	<bean id="passwordAuthenticator" class="com.pelletier.sftp.camel.server.PasswordAuthenticatorImp">
+		<property name="allowAll" value="true"/>
+	</bean>
+	<!-- end SshServer configuration -->
+	
+	<!-- processors -->
+	<bean id="errorProcessor" class="com.pelletier.sftp.camel.ErrorProcessor" />
+
+	<!-- here is my default trigger puller thing -->
+	<bean id="plainFtpServerUserTrigger" class="com.pelletier.sftp.camel.trigger.PlainFtpServerUserTrigger"/>
+	<bean id="onDisconnectFtpServerUserTrigger" class="com.pelletier.sftp.camel.trigger.OnDisconnectFtpServerUserTrigger" />
+	<bean id="renameFtpServerUserTrigger" class="com.pelletier.sftp.camel.trigger.RenameFtpServerUserTrigger"/>
+	<bean id="readyFileMatchFtpServerUserTrigger" class="com.pelletier.sftp.camel.trigger.ReadyFileMatchFtpServerUserTrigger"/>
+	<bean id="readyFileFtpServerUserTrigger" class="com.pelletier.sftp.camel.trigger.ReadyFileFtpServerUserTrigger"/>
+
+	<!-- will everything share an SftpConsumer? -->
+	<bean id="sshFxpWriteRequestHandler" class="com.pelletier.sftp.camel.server.handlers.SshFxpWriteRequestHandler" />
+	<bean id="sshFxpRenameRequestHandler" class="com.pelletier.sftp.camel.server.handlers.SshFxpRenameRequestHandler" />
+	<bean id="sshFxpInitRequestHandler" class="com.pelletier.sftp.camel.server.handlers.SshFxpInitRequestHandler">
+		<property name="defaultTriggers">
+			<map>
+				<entry key="plain" value-ref="plainFtpServerUserTrigger"/>
+				<entry key="disconnect" value-ref="onDisconnectFtpServerUserTrigger"/>
+				<entry key="rename" value-ref="renameFtpServerUserTrigger"/>
+				<entry key="pair" value-ref="readyFileMatchFtpServerUserTrigger"/>
+				<entry key="ready" value-ref="readyFileFtpServerUserTrigger"/>
+			</map>
+		</property>
+	</bean>
+	<bean id="sshFxpOpenRequestHandler" class="com.pelletier.sftp.camel.server.handlers.SshFxpOpenRequestHandler"/>
+
+
+	<bean id="sftpletImp" class="com.pelletier.sftp.camel.server.SftpletImp">
+		<property name="handlers">
+			<map>
+				<entry key="org.apache.sshd.sftp.request.SshFxpInitRequest" value-ref="sshFxpInitRequestHandler" />
+				<entry key="org.apache.sshd.sftp.request.SshFxpWriteRequest" value-ref="sshFxpWriteRequestHandler"/>
+				<entry key="org.apache.sshd.sftp.request.SshFxpRenameRequest" value-ref="sshFxpRenameRequestHandler"/>
+				<entry key="org.apache.sshd.sftp.request.SshFxpOpenRequest" value-ref="sshFxpOpenRequestHandler"/>
+			</map>
+		</property>
+	</bean>
+
+	<bean id="sftpSubsystem" class="org.apache.sshd.sftp.subsystem.SftpSubsystem" scope="prototype">
+		<property name="sftpLet" ref="sftpletImp" />
+	</bean>
+
+</beans>
